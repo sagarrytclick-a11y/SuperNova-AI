@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Loader2, Copy, Check } from 'lucide-react';
+import { Send, User, Bot, Loader2, Copy, Check, ArrowUp  } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -9,13 +9,26 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import copy from 'copy-to-clipboard';
 
 import Sidebar from '@/components/Sidebar';
+import AuthForm from '@/components/AuthForm';
 
 interface Message {
   role: 'user' | 'assistant';
   content: string;
 }
 
-function CodeBlock({ className, children, ...props }: any) {
+interface ChatHistoryItem {
+  _id: string;
+  title: string;
+  updatedAt: string;
+}
+
+interface CodeBlockProps {
+  className?: string;
+  children?: React.ReactNode;
+  [key: string]: any;
+}
+
+function CodeBlock({ className, children, ...props }: CodeBlockProps) {
   const match = /language-(\w+)/.exec(className || '');
   const [copied, setCopied] = useState(false);
 
@@ -86,203 +99,295 @@ function ThreeDots() {
 }
 
 export default function Home() {
+  const [token, setToken] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
+  const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string | null>(null);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  };
+  useEffect(() => {
+    const savedToken = localStorage.getItem('token');
+    if (savedToken) {
+      setToken(savedToken);
+    }
+  }, []);
 
   useEffect(() => {
-    scrollToBottom();
+    if (token) {
+      fetchHistory();
+    }
+  }, [token]);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
-
-    const userMessage: Message = { role: 'user', content: input };
-    setMessages((prev) => [...prev, userMessage]);
-    setInput('');
-    setIsLoading(true);
-
-    // Add an empty assistant message to be filled by the stream
-    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
-
+  const fetchHistory = async () => {
+    if (!token) return;
+    setIsHistoryLoading(true);
     try {
-      const response = await fetch('/api/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...messages, userMessage] }),
+      const res = await fetch('/api/chat', {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to fetch response');
+      if (res.ok) {
+        const data = await res.json();
+        setChatHistory(data);
       }
+    } catch (err) {
+      console.error('Failed to fetch history', err);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  };
 
-      if (!response.body) throw new Error('No response body');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let assistantContent = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        assistantContent += chunk;
-
-        // Update the last message (the assistant's message) with the accumulated content
-        setMessages((prev) => {
-          const newMessages = [...prev];
-          newMessages[newMessages.length - 1] = {
-            role: 'assistant',
-            content: assistantContent,
-          };
-          return newMessages;
-        });
-      }
-    } catch (error: any) {
-      console.error('Error:', error);
-      setMessages((prev) => {
-        const newMessages = [...prev];
-        newMessages[newMessages.length - 1] = {
-          role: 'assistant',
-          content: `Error: ${error.message || 'Sorry, I encountered an error. Please try again.'}`,
-        };
-        return newMessages;
+  const fetchChatDetails = async (chatId: string) => {
+    if (!token) return;
+    setIsLoading(true);
+    try {
+      const res = await fetch(`/api/chat?chatId=${chatId}`, {
+        headers: { 'Authorization': `Bearer ${token}` }
       });
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data.messages);
+        setActiveChatId(chatId);
+      }
+    } catch (err) {
+      console.error('Failed to fetch chat details', err);
     } finally {
       setIsLoading(false);
     }
   };
 
+  const handleSend = async () => {
+    if (!input.trim() || isLoading || !token) return;
+
+    const userMessage = input.trim();
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    setIsLoading(true);
+
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          messageContent: userMessage,
+          chatId: activeChatId
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to send message');
+
+      const returnedChatId = response.headers.get('X-Chat-Id');
+      if (returnedChatId && !activeChatId) {
+        setActiveChatId(returnedChatId);
+        fetchHistory(); // Refresh history to show new chat
+      }
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let assistantMessage = '';
+
+      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+
+      while (true) {
+        const { done, value } = await reader!.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value);
+        assistantMessage += chunk;
+        setMessages(prev => {
+          const newMessages = [...prev];
+          newMessages[newMessages.length - 1].content = assistantMessage;
+          return newMessages;
+        });
+      }
+    } catch (error) {
+      console.error('Chat error:', error);
+      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleNewChat = () => {
+    setActiveChatId(null);
+    setMessages([]);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('userId');
+    setToken(null);
+    setMessages([]);
+    setActiveChatId(null);
+    setChatHistory([]);
+  };
+
+  if (!token) {
+    return <AuthForm onAuthSuccess={(t, u) => setToken(t)} />;
+  }
+
   return (
-    <div className="flex min-h-screen bg-zinc-50 dark:bg-zinc-950">
+    <div className="flex h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 overflow-hidden">
       <Sidebar 
         isExpanded={isSidebarExpanded} 
-        setIsExpanded={setIsSidebarExpanded} 
-        onNewChat={() => setMessages([])} 
+        setIsExpanded={setIsSidebarExpanded}
+        onNewChat={handleNewChat}
+        onSelectChat={fetchChatDetails}
+        chatHistory={chatHistory}
+        activeChatId={activeChatId}
+        onLogout={handleLogout}
       />
-      
-      <main className={`flex flex-1 flex-col items-center transition-all duration-300 ease-in-out ${
-        isSidebarExpanded ? 'pl-64' : 'pl-20'
-      }`}>
+
+      <main className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarExpanded ? 'ml-64' : 'ml-20'}`}>
         {/* Header */}
-        <header className="sticky top-0 z-10 flex w-full items-center justify-between border-b bg-white/80 p-4 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-900/80">
-          <div className="mx-auto flex w-full max-w-3xl items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600 text-white">
-              <Bot size={20} />
+        <header className="h-16 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-10">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+              <span className="text-xl">🩺</span>
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-zinc-900 dark:text-zinc-50">
-              Web Dev AI Agent
-            </h1>
+            <div>
+              <h1 className="font-semibold text-zinc-900 dark:text-white">Health Assistant</h1>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
+                <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                AI Agent Online
+              </p>
+            </div>
           </div>
         </header>
 
-        {/* Messages Area */}
-        <div className="flex w-full max-w-3xl flex-1 flex-col gap-6 p-4 pb-32 pt-8">
+        {/* Chat Area */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
           {messages.length === 0 ? (
-            <div className="flex flex-1 flex-col items-center justify-center text-center">
-              <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-                <Bot size={32} />
+            <div className="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto space-y-6">
+              <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/20 rounded-3xl flex items-center justify-center text-4xl animate-bounce">
+                🌱
               </div>
-              <h2 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-                Web Dev Expert is ready!
-              </h2>
-              <p className="mt-2 text-zinc-500 dark:text-zinc-400">
-                Ask me anything about HTML, CSS, JS, or Next.js.
-              </p>
+              <div className="space-y-2">
+                <h2 className="text-2xl font-bold text-zinc-900 dark:text-white">Welcome to your Health Portal</h2>
+                <p className="text-zinc-500 dark:text-zinc-400">
+                  I'm your AI wellness assistant. Ask me anything about diet, exercise, or healthy living.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full">
+                {[
+                  "What's a balanced meal plan for energy?",
+                  "Easy 15-minute home workouts",
+                  "How to improve my sleep quality?",
+                  "Healthy snack alternatives"
+                ].map((suggestion, i) => (
+                  <button
+                    key={i}
+                    onClick={() => setInput(suggestion)}
+                    className="p-4 text-sm text-left rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-blue-500 dark:hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all"
+                  >
+                    {suggestion}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : (
-            messages.map((message, index) => (
-              <div
-                key={index}
-                className={`flex w-full gap-4 ${
-                  message.role === 'user' ? 'flex-row-reverse' : 'flex-row'
-                }`}
-              >
+            <div className="max-w-4xl mx-auto space-y-6 pb-20">
+              {messages.map((msg, i) => (
                 <div
-                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-                    message.role === 'user'
-                      ? 'bg-zinc-200 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
-                      : 'bg-blue-600 text-white'
-                  }`}
+                  key={i}
+                  className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
                 >
-                  {message.role === 'user' ? <User size={18} /> : <Bot size={18} />}
-                </div>
-                <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm leading-relaxed ${
-                    message.role === 'user'
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-800'
-                  }`}
-                >
-                  <div className="prose prose-sm dark:prose-invert max-w-none prose-p:leading-relaxed prose-pre:p-0 prose-pre:bg-transparent">
-                    <ReactMarkdown 
-                      remarkPlugins={[remarkGfm]}
-                      components={{
-                        code: ({ inline, ...props }: any) => 
-                          inline ? (
-                            <code className="bg-zinc-100 dark:bg-zinc-800 rounded px-1.5 py-0.5 font-mono text-xs" {...props} />
-                          ) : (
-                            <CodeBlock {...props} />
-                          )
-                      }}
-                    >
-                      {message.content}
-                    </ReactMarkdown>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${
+                    msg.role === 'user' 
+                      ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700' 
+                      : 'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-900/30'
+                  }`}>
+                    {msg.role === 'user' ? <User size={20} /> : <Bot size={20} className="text-blue-600 dark:text-blue-400" />}
+                  </div>
+                  <div className={`flex flex-col max-w-[80%] ${msg.role === 'user' ? 'items-end' : ''}`}>
+                    <div className={`rounded-2xl px-4 py-3 shadow-sm ${
+                      msg.role === 'user'
+                        ? 'bg-blue-600 text-white rounded-tr-none'
+                        : 'bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-tl-none text-zinc-800 dark:text-zinc-200'
+                    }`}>
+                      {msg.role === 'assistant' && !msg.content.trim() ? (
+                        <div className="py-2">
+                          <ThreeDots />
+                        </div>
+                      ) : (
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            code: CodeBlock,
+                            p: ({ children }: { children?: React.ReactNode }) => <p className="mb-4 last:mb-0 leading-relaxed">{children}</p>,
+                            ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc ml-4 mb-4 space-y-2">{children}</ul>,
+                            ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal ml-4 mb-4 space-y-2">{children}</ol>,
+                            h1: ({ children }: { children?: React.ReactNode }) => <h1 className="text-xl font-bold mb-4">{children}</h1>,
+                            h2: ({ children }: { children?: React.ReactNode }) => <h2 className="text-lg font-bold mb-3">{children}</h2>,
+                            h3: ({ children }: { children?: React.ReactNode }) => <h3 className="text-md font-bold mb-2">{children}</h3>,
+                          }}
+                        >
+                          {msg.content}
+                        </ReactMarkdown>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
-          )}
-          {isLoading && messages[messages.length - 1]?.content === '' && (
-            <div className="flex w-full gap-4">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-blue-600 text-white">
-                <Bot size={18} />
-              </div>
-              <div className="flex items-center gap-2 rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800">
-                <ThreeDots />
-              </div>
+              ))}
+              
+              {/* Fallback loader if the assistant message hasn't even been added to the array yet */}
+              {isLoading && messages[messages.length - 1]?.role === 'user' && (
+                <div className="flex gap-4">
+                  <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 border bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-900/30">
+                    <Bot size={20} className="text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div className="flex flex-col max-w-[80%]">
+                    <div className="rounded-2xl px-4 py-3 shadow-sm bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-tl-none">
+                      <div className="py-2">
+                        <ThreeDots />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+              <div ref={messagesEndRef} />
             </div>
           )}
-          <div ref={messagesEndRef} />
         </div>
 
         {/* Input Area */}
-        <div className={`fixed bottom-0 flex justify-center border-t bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950 transition-all duration-300 ease-in-out ${
-          isSidebarExpanded ? 'left-64' : 'left-20'
-        } right-0`}>
-          <form
-            onSubmit={handleSubmit}
-            className="relative flex w-full max-w-3xl items-center gap-2"
-          >
-            <input
-              type="text"
+        <div className="p-4 md:p-6 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800">
+          <div className="max-w-4xl w-full flex mx-auto relative">
+            <textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask a web development question..."
-              className="flex-1 rounded-xl border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-50 dark:focus:border-blue-400 dark:focus:ring-blue-400"
-              disabled={isLoading}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="Ask about health, diet, or exercise..."
+              className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-2xl px-4 py-4 pr-14 focus:ring-2 focus:ring-blue-500 outline-none resize-none min-h-[60px] max-h-[200px] transition-all text-zinc-900 dark:text-white"
+              rows={1}
             />
             <button
-              type="submit"
+              onClick={handleSend}
               disabled={isLoading || !input.trim()}
-              className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white transition-colors hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600"
+              className="absolute right-3 bottom-3 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 transition-all shadow-lg shadow-blue-500/20"
             >
-              {isLoading && messages[messages.length - 1]?.content === '' ? (
-                <Loader2 size={20} className="animate-spin" />
-              ) : (
-                <Send size={20} />
-              )}
+              {isLoading ? <Loader2 size={20} className="animate-spin" /> : <ArrowUp size={20} />}
             </button>
-          </form>
+          </div>
+          <p className="text-center text-[10px] text-zinc-400 mt-3 uppercase tracking-widest font-medium">
+            Powered by OpenRouter AI • Health & Wellness Specialist
+          </p>
         </div>
       </main>
     </div>

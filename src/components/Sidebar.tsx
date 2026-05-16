@@ -1,22 +1,39 @@
 'use client';
 
 import { 
-  History, 
   MessageSquare, 
-  User, 
   ChevronLeft, 
   ChevronRight,
   Plus,
-  Settings
+  LogOut,
+  User
 } from 'lucide-react';
+
+interface ChatHistoryItem {
+  _id: string;
+  title: string;
+  updatedAt: string;
+}
 
 interface SidebarProps {
   isExpanded: boolean;
   setIsExpanded: (expanded: boolean) => void;
-  onNewChat?: () => void;
+  onNewChat: () => void;
+  onSelectChat: (chatId: string) => void;
+  chatHistory: ChatHistoryItem[];
+  activeChatId: string | null;
+  onLogout: () => void;
 }
 
-export default function Sidebar({ isExpanded, setIsExpanded, onNewChat }: SidebarProps) {
+export default function Sidebar({ 
+  isExpanded, 
+  setIsExpanded, 
+  onNewChat, 
+  onSelectChat, 
+  chatHistory, 
+  activeChatId,
+  onLogout
+}: SidebarProps) {
 
   return (
     <aside 
@@ -41,94 +58,71 @@ export default function Sidebar({ isExpanded, setIsExpanded, onNewChat }: Sideba
           }`}
         >
           <Plus size={20} />
-          {isExpanded && <span>New Chat</span>}
+          {isExpanded && <span>New Consultation</span>}
         </button>
       </div>
 
       {/* Navigation / History */}
       <div className="flex-1 overflow-y-auto px-3 py-2">
-        <div className="space-y-1">
-          <NavItem 
-            icon={<History size={20} />} 
-            label="History" 
-            isExpanded={isExpanded} 
-            isActive 
-          />
-          <NavItem 
-            icon={<MessageSquare size={20} />} 
-            label="Messages" 
-            isExpanded={isExpanded} 
-          />
-        </div>
-
         {isExpanded && (
-          <div className="mt-8">
+          <div className="mt-4">
             <h3 className="px-4 text-xs font-semibold uppercase tracking-wider text-zinc-500 dark:text-zinc-400">
-              Recent Chats
+              Recent History
             </h3>
             <div className="mt-2 space-y-1">
-              {['Project Setup', 'API Integration', 'UI Components'].map((chat, i) => (
-                <button
-                  key={i}
-                  className="flex w-full items-center gap-3 rounded-lg px-4 py-2 text-sm text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800"
-                >
-                  <MessageSquare size={16} />
-                  <span className="truncate">{chat}</span>
-                </button>
-              ))}
+              {chatHistory.length === 0 ? (
+                <p className="px-4 text-xs text-zinc-400 italic mt-4">No history yet</p>
+              ) : (
+                chatHistory.map((chat) => (
+                  <button
+                    key={chat._id}
+                    onClick={() => onSelectChat(chat._id)}
+                    className={`flex w-full items-center gap-3 rounded-lg px-4 py-2 text-sm transition-colors ${
+                      activeChatId === chat._id 
+                        ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' 
+                        : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+                    }`}
+                  >
+                    <MessageSquare size={16} />
+                    <span className="truncate">{chat.title}</span>
+                  </button>
+                ))
+              )}
             </div>
+          </div>
+        )}
+        {!isExpanded && (
+          <div className="flex flex-col items-center gap-4 mt-4">
+            {chatHistory.map((chat) => (
+              <button
+                key={chat._id}
+                onClick={() => onSelectChat(chat._id)}
+                title={chat.title}
+                className={`p-2 rounded-lg transition-colors ${
+                  activeChatId === chat._id 
+                    ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' 
+                    : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
+                }`}
+              >
+                <MessageSquare size={20} />
+              </button>
+            ))}
           </div>
         )}
       </div>
 
-      {/* Profile Section */}
+      {/* Logout Section */}
       <div className="border-t border-zinc-200 p-4 dark:border-zinc-800">
-        <div className={`flex items-center gap-3 ${!isExpanded && 'justify-center'}`}>
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900/30 dark:text-blue-400">
-            <User size={20} />
-          </div>
-          {isExpanded && (
-            <div className="flex-1 overflow-hidden text-left">
-              <p className="truncate text-sm font-medium text-zinc-900 dark:text-zinc-50">
-                John Doe
-              </p>
-              <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                Pro Plan
-              </p>
-            </div>
-          )}
-          {isExpanded && (
-            <button className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200">
-              <Settings size={18} />
-            </button>
-          )}
-        </div>
+        <button
+          onClick={onLogout}
+          className={`flex w-full items-center gap-3 rounded-lg px-4 py-2 text-sm text-red-600 hover:bg-red-50 dark:text-red-400 dark:hover:bg-red-900/20 transition-colors ${
+            !isExpanded && 'justify-center px-0'
+          }`}
+        >
+          <LogOut size={20} />
+          {isExpanded && <span>Logout</span>}
+        </button>
       </div>
     </aside>
-  );
-}
-
-function NavItem({ 
-  icon, 
-  label, 
-  isExpanded, 
-  isActive = false 
-}: { 
-  icon: React.ReactNode; 
-  label: string; 
-  isExpanded: boolean;
-  isActive?: boolean;
-}) {
-  return (
-    <button
-      className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors ${
-        isActive 
-          ? 'bg-blue-50 text-blue-600 dark:bg-blue-900/20 dark:text-blue-400' 
-          : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'
-      } ${!isExpanded && 'justify-center px-0'}`}
-    >
-      <div className="shrink-0">{icon}</div>
-      {isExpanded && <span>{label}</span>}
-    </button>
   );
 }
