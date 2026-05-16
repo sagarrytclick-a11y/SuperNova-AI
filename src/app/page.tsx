@@ -1,175 +1,189 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Loader2, Copy, Check, ArrowUp  } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { useRouter } from 'next/navigation';
+import {
+  User, Bot, Check, Sparkles, LayoutGrid, Circle,
+  Download, X, Mic, SendHorizontal, Square, Pencil, Copy
+} from 'lucide-react';
+import Image from 'next/image';
+import Link from 'next/link';
 import copy from 'copy-to-clipboard';
 
 import Sidebar from '@/components/Sidebar';
-import AuthForm from '@/components/AuthForm';
-
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-}
-
-interface ChatHistoryItem {
-  _id: string;
-  title: string;
-  updatedAt: string;
-}
-
-interface CodeBlockProps {
-  className?: string;
-  children?: React.ReactNode;
-  [key: string]: any;
-}
-
-function CodeBlock({ className, children, ...props }: CodeBlockProps) {
-  const match = /language-(\w+)/.exec(className || '');
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = () => {
-    copy(String(children).replace(/\n$/, ''));
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  if (!match) {
-    return (
-      <code className="bg-zinc-100 dark:bg-zinc-800 rounded px-1.5 py-0.5 font-mono text-xs" {...props}>
-        {children}
-      </code>
-    );
-  }
-
-  return (
-    <div className="relative group my-4 rounded-lg overflow-hidden border border-zinc-200 dark:border-zinc-800">
-      <div className="flex items-center justify-between px-4 py-1.5 bg-zinc-100 dark:bg-zinc-800 border-b border-zinc-200 dark:border-zinc-700">
-        <span className="text-xs font-medium text-zinc-500 dark:text-zinc-400">
-          {match[1]}
-        </span>
-        <button
-          onClick={handleCopy}
-          className="flex items-center gap-1.5 text-xs font-medium text-zinc-500 hover:text-blue-600 dark:text-zinc-400 dark:hover:text-blue-400 transition-colors"
-        >
-          {copied ? (
-            <>
-              <Check size={14} className="text-green-500" />
-              <span className="text-green-500">Copied!</span>
-            </>
-          ) : (
-            <>
-              <Copy size={14} />
-              <span>Copy</span>
-            </>
-          )}
-        </button>
-      </div>
-      <SyntaxHighlighter
-        style={vscDarkPlus}
-        language={match[1]}
-        PreTag="div"
-        customStyle={{
-          margin: 0,
-          padding: '1rem',
-          fontSize: '0.875rem',
-          lineHeight: '1.5',
-          backgroundColor: 'transparent',
-        }}
-        {...props}
-      >
-        {String(children).replace(/\n$/, '')}
-      </SyntaxHighlighter>
-    </div>
-  );
-}
-
-function ThreeDots() {
-  return (
-    <div className="flex space-x-1 items-center h-4">
-      <div className="h-1.5 w-1.5 bg-zinc-500 dark:bg-zinc-400 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-      <div className="h-1.5 w-1.5 bg-zinc-500 dark:bg-zinc-400 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-      <div className="h-1.5 w-1.5 bg-zinc-500 dark:bg-zinc-400 rounded-full animate-bounce"></div>
-    </div>
-  );
-}
+import HealthProfileModal from '@/components/HealthProfileModal';
+import MessageList from '@/components/chat/MessageList';
+import ChatInput from '@/components/chat/ChatInput';
+import { useUser } from '@/hooks/useUser';
+import { useChat, useChatDetails } from '@/hooks/useChat';
+import { formatChatForExport, downloadChatExport } from '@/lib/chat-utils';
+import { useQueryClient } from '@tanstack/react-query';
 
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
+  const [messages, setMessages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
-  const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
-  
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
+  const [isHealthProfileModalOpen, setIsHealthProfileModalOpen] = useState(false);
+  const [selectedMode, setSelectedMode] = useState('Standard');
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const lastChatIdRef = useRef<string | null>(null);
 
+  const queryClient = useQueryClient();
+
+  // TanStack Query Hooks
+  const { user, updateProfile } = useUser(token);
+  const { history, isHistoryLoading, deleteChat, clearAllChats, refreshHistory } = useChat(token);
+  const { data: activeChatDetails } = useChatDetails(token, activeChatId);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const router = useRouter();
+
+  // Click outside listener for profile menu
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setIsProfileMenuOpen(false);
+      }
+    };
+    if (isProfileMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    } else {
+      document.removeEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isProfileMenuOpen]);
+
+  // Auth check
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
     if (savedToken) {
       setToken(savedToken);
     }
+    setIsCheckingAuth(false);
   }, []);
 
   useEffect(() => {
-    if (token) {
-      fetchHistory();
+    if (!isCheckingAuth && !token) {
+      router.push('/login');
     }
-  }, [token]);
+  }, [token, isCheckingAuth, router]);
 
+  // Load chat details
+  // Sync messages from server
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+    const isChatSwitch = activeChatId !== lastChatIdRef.current;
+    
+    // If we are currently streaming the active chat, don't let background syncs interfere
+    if (isLoading && activeChatId && !isChatSwitch) return;
 
-  const fetchHistory = async () => {
-    if (!token) return;
-    setIsHistoryLoading(true);
-    try {
-      const res = await fetch('/api/chat', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setChatHistory(data);
+    if (isChatSwitch) {
+      if (activeChatDetails?.messages) {
+        setMessages(activeChatDetails.messages);
+        lastChatIdRef.current = activeChatId;
+      } else if (!activeChatId) {
+        setMessages([]);
+        lastChatIdRef.current = null;
+      } else {
+        // We switched to an ID but don't have data yet.
+        // Only clear if we aren't currently in the middle of a stream for this new ID.
+        // (This happens when the first message of a new chat is being processed)
+        if (!isLoading && messages.length > 0) {
+          setMessages([]);
+        }
+        
+        // If we just finished a stream (isLoading just became false), 
+        // we might still be waiting for the server to return the data.
+        // We DON'T update lastChatIdRef.current here so that we try again when data arrives.
       }
+    } else if (activeChatDetails?.messages && !isLoading) {
+      // Sync for final consistency after streaming or background updates
+      // Only update if the messages are actually different to avoid flicker
+      if (JSON.stringify(activeChatDetails.messages) !== JSON.stringify(messages)) {
+        setMessages(activeChatDetails.messages);
+      }
+    }
+  }, [activeChatId, activeChatDetails?.messages, isLoading, messages.length]);
+
+  const handleUpdateHealthProfile = async (healthData: any) => {
+    try {
+      await updateProfile({ healthProfile: healthData });
+      setIsHealthProfileModalOpen(false);
     } catch (err) {
-      console.error('Failed to fetch history', err);
-    } finally {
-      setIsHistoryLoading(false);
+      console.error('Failed to update health profile', err);
     }
   };
 
-  const fetchChatDetails = async (chatId: string) => {
-    if (!token) return;
-    setIsLoading(true);
+  const handleDeleteChat = async (chatId: string) => {
     try {
-      const res = await fetch(`/api/chat?chatId=${chatId}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        setMessages(data.messages);
-        setActiveChatId(chatId);
+      await deleteChat(chatId);
+      if (activeChatId === chatId) {
+        handleNewChat();
       }
     } catch (err) {
-      console.error('Failed to fetch chat details', err);
-    } finally {
+      console.error('Failed to delete chat', err);
+    }
+  };
+
+  const handleClearAllChats = async () => {
+    try {
+      await clearAllChats();
+      setMessages([]);
+      setActiveChatId(null);
+      setIsSettingsModalOpen(false);
+    } catch (err) {
+      console.error('Failed to clear all chats', err);
+    }
+  };
+
+  const handleExportChat = () => {
+    if (messages.length === 0) return;
+    const content = formatChatForExport(messages);
+    downloadChatExport(content);
+  };
+
+  const handleProfilePictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !token) return;
+
+    const reader = new FileReader();
+    reader.onloadend = async () => {
+      const base64String = reader.result as string;
+      try {
+        await updateProfile({ profilePicture: base64String });
+        setIsProfileMenuOpen(false);
+      } catch (err) {
+        console.error('Upload failed', err);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleStop = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
       setIsLoading(false);
     }
   };
 
-  const handleSend = async () => {
-    if (!input.trim() || isLoading || !token) return;
+  const handleSend = async (userMessage: string) => {
+    if (!userMessage.trim() || isLoading || !token) return;
 
-    const userMessage = input.trim();
-    setInput('');
-    setMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    const newMessage = { role: 'user', content: userMessage };
+    const assistantPlaceholder = { role: 'assistant', content: '' };
+    
+    setMessages(prev => [...prev, newMessage, assistantPlaceholder]);
     setIsLoading(true);
 
     try {
@@ -181,8 +195,10 @@ export default function Home() {
         },
         body: JSON.stringify({
           messageContent: userMessage,
-          chatId: activeChatId
+          chatId: activeChatId,
+          mode: selectedMode
         }),
+        signal: abortController.signal,
       });
 
       if (!response.ok) throw new Error('Failed to send message');
@@ -190,32 +206,61 @@ export default function Home() {
       const returnedChatId = response.headers.get('X-Chat-Id');
       if (returnedChatId && !activeChatId) {
         setActiveChatId(returnedChatId);
-        fetchHistory(); // Refresh history to show new chat
+        refreshHistory();
       }
 
       const reader = response.body?.getReader();
+      if (!reader) throw new Error('Failed to get stream reader');
+      
       const decoder = new TextDecoder();
       let assistantMessage = '';
 
-      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
       while (true) {
-        const { done, value } = await reader!.read();
+        const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
+        const chunk = decoder.decode(value, { stream: true });
         assistantMessage += chunk;
         setMessages(prev => {
           const newMessages = [...prev];
-          newMessages[newMessages.length - 1].content = assistantMessage;
+          // Find the LAST assistant message in the array to update it
+          // This is safer than just using length - 1
+          let found = false;
+          for (let i = newMessages.length - 1; i >= 0; i--) {
+            if (newMessages[i].role === 'assistant') {
+              newMessages[i].content = assistantMessage;
+              found = true;
+              break;
+            }
+          }
+          // Fallback if the placeholder was somehow removed (e.g. by a background sync)
+          if (!found) {
+            return [...newMessages, { role: 'assistant', content: assistantMessage }];
+          }
           return newMessages;
         });
       }
-    } catch (error) {
-      console.error('Chat error:', error);
-      setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error. Please try again.' }]);
+    } catch (error: any) {
+      if (error.name !== 'AbortError') {
+        console.error('Chat error:', error);
+        setMessages(prev => {
+          const newMessages = [...prev];
+          if (newMessages.length > 0 && newMessages[newMessages.length - 1].role === 'assistant') {
+            newMessages[newMessages.length - 1].content = 'Sorry, I encountered an error. Please try again.';
+          }
+          return newMessages;
+        });
+      }
     } finally {
+      abortControllerRef.current = null;
       setIsLoading(false);
+      
+      // Invalidate to keep history in sync, but local 'messages' won't be overwritten 
+      // because of the ID check in useEffect
+      queryClient.invalidateQueries({ queryKey: ['chatHistory', token] });
+      if (activeChatId) {
+        queryClient.invalidateQueries({ queryKey: ['chatDetails', token, activeChatId] });
+      }
     }
   };
 
@@ -230,166 +275,277 @@ export default function Home() {
     setToken(null);
     setMessages([]);
     setActiveChatId(null);
-    setChatHistory([]);
+    router.push('/login');
   };
 
-  if (!token) {
-    return <AuthForm onAuthSuccess={(t, u) => setToken(t)} />;
+  if (isCheckingAuth || !token) {
+    return null;
   }
 
   return (
-    <div className="flex h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-zinc-100 overflow-hidden">
-      <Sidebar 
-        isExpanded={isSidebarExpanded} 
+    <div className="flex h-screen bg-[#131314] text-[#e3e3e3] overflow-hidden">
+      <Sidebar
+        isExpanded={isSidebarExpanded}
         setIsExpanded={setIsSidebarExpanded}
         onNewChat={handleNewChat}
-        onSelectChat={fetchChatDetails}
-        chatHistory={chatHistory}
+        onSelectChat={(id) => setActiveChatId(id)}
+        chatHistory={history}
         activeChatId={activeChatId}
         onLogout={handleLogout}
+        isHistoryLoading={isHistoryLoading}
+        onDeleteChat={handleDeleteChat}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
 
-      <main className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarExpanded ? 'ml-64' : 'ml-20'}`}>
-        {/* Header */}
-        <header className="h-16 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between px-6 bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md z-10">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
-              <span className="text-xl">🩺</span>
+      <main className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarExpanded ? 'ml-64' : 'ml-[68px]'}`}>
+        <header className="h-16 flex items-center justify-between px-4 lg:px-6 bg-[#131314] z-10">
+          <div className="flex items-center gap-2">
+            <Image src="/logo-2.png" alt="AI" width={30} height={30} />
+            <h1 className="text-[22px] font-medium text-[#e3e3e3]">SuperNova</h1>
+          </div>
+
+          <div className="flex items-center gap-3 md:gap-4">
+            <div className="relative hidden sm:block">
+              <select
+                value={selectedMode}
+                onChange={(e) => setSelectedMode(e.target.value)}
+                className="appearance-none w-full bg-[#1E212B] border border-[#444746] rounded-full pl-4 pr-10 py-2 text-xs text-[#F8FAFC] outline-none focus:border-[#4A90E2] hover:bg-[#282a2c] transition-all cursor-pointer"
+              >
+                <option value="Standard">Standard Mode</option>
+                <option value="Supportive">Supportive Coach</option>
+                <option value="Strict">Drill Sergeant</option>
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-[#94A3B8]">
+                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
             </div>
-            <div>
-              <h1 className="font-semibold text-zinc-900 dark:text-white">Health Assistant</h1>
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
-                AI Agent Online
-              </p>
+            {messages.length > 0 && (
+              <button
+                onClick={handleExportChat}
+                className="p-2 text-[#c4c7c5] hover:text-[#e3e3e3] hover:bg-white/10 rounded-full transition-all"
+                title="Export chat"
+              >
+                <Download size={20} />
+              </button>
+            )}
+            <Link href="/pricing" className="flex items-center gap-2 bg-[#004a77] hover:bg-[#005c94] text-[#c2e7ff] text-sm font-medium px-4 py-2 rounded-full transition-colors">
+              <Sparkles size={16} />
+              <span className="hidden sm:inline">Upgrade</span>
+            </Link>
+
+            <div className="relative" ref={profileMenuRef}>
+              <button
+                onClick={() => setIsProfileMenuOpen(!isProfileMenuOpen)}
+                className="w-8 h-8 rounded-full bg-[#ab47bc] overflow-hidden flex items-center justify-center text-sm font-medium text-white hover:opacity-90 transition-opacity"
+                title="Account menu"
+              >
+                {user?.profilePicture ? (
+                  <Image width={100} height={100} src={user.profilePicture} alt="Profile" className="w-full h-full object-cover" />
+                ) : (
+                  user?.username?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || <User size={16} />
+                )}
+              </button>
+
+              {isProfileMenuOpen && (
+                <div className="absolute right-0 mt-2 w-64 bg-[#282a2c] rounded-2xl shadow-xl border border-[#444746] overflow-hidden z-50">
+                  <div className="p-4 border-b border-[#444746]">
+                    <div className="font-medium text-[#e3e3e3] truncate">{user?.username || 'User'}</div>
+                    <div className="text-sm text-[#c4c7c5] truncate">{user?.email}</div>
+                  </div>
+                  <div className="p-2">
+                    <button
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        setIsHealthProfileModalOpen(true);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-[#e3e3e3] hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      Health Profile
+                    </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-full text-left px-3 py-2 text-sm text-[#e3e3e3] hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      Upload Picture
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsProfileMenuOpen(false);
+                        setIsLogoutModalOpen(true);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm text-red-400 hover:bg-white/10 rounded-lg transition-colors"
+                    >
+                      Log out
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
+
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleProfilePictureUpload}
+              accept="image/*"
+              className="hidden"
+            />
           </div>
         </header>
 
-        {/* Chat Area */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-6">
+        <div className="flex-1 flex flex-col overflow-hidden relative">
           {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center max-w-2xl mx-auto space-y-6">
-              <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/20 rounded-3xl flex items-center justify-center text-4xl animate-bounce">
-                🌱
+            <div className="flex-1 flex flex-col items-center justify-center px-4">
+              <div className="flex flex-col items-center gap-6 mb-12 animate-in fade-in zoom-in duration-700">
+                <div className="w-16 h-16 bg-[#131314] rounded-2xl flex items-center justify-center shadow-2xl border border-[#444746]">
+                  <Image src="/logo-2.png" alt="AI" width={40} height={40} className="animate-pulse" />
+                </div>
+                <div className="text-center">
+                  <h2 className="text-4xl font-semibold mb-3 ">
+                    Hello, {user?.username || 'Wellness Explorer'}
+                  </h2>
+                  <p className="text-[#c4c7c5] text-lg max-w-md mx-auto">
+                    How can I help you reach your health and fitness goals today?
+                  </p>
+                </div>
               </div>
-              <div className="space-y-2">
-                <h2 className="text-2xl font-bold text-zinc-900 dark:text-white">Welcome to your Health Portal</h2>
-                <p className="text-zinc-500 dark:text-zinc-400">
-                  I'm your AI wellness assistant. Ask me anything about diet, exercise, or healthy living.
-                </p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 w-full">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full max-w-5xl">
                 {[
-                  "What's a balanced meal plan for energy?",
-                  "Easy 15-minute home workouts",
-                  "How to improve my sleep quality?",
-                  "Healthy snack alternatives"
-                ].map((suggestion, i) => (
+                  { icon: <Bot className="text-blue-400" />, title: "Meal Planning", desc: "Create a 7-day personalized diet plan." },
+                  { icon: <LayoutGrid className="text-purple-400" />, title: "Workout Routine", desc: "Build a strength training program." },
+                  { icon: <Circle className="text-green-400" />, title: "Health Analysis", desc: "Calculate your BMR and TDEE metrics." }
+                ].map((card, i) => (
                   <button
                     key={i}
-                    onClick={() => setInput(suggestion)}
-                    className="p-4 text-sm text-left rounded-xl border border-zinc-200 dark:border-zinc-800 hover:border-blue-500 dark:hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-all"
+                    onClick={() => handleSend(card.desc)}
+                    className="p-5 bg-[#1e1f20] border border-[#444746] rounded-2xl text-left hover:bg-[#282a2c] transition-all group hover:scale-[1.02] duration-300 shadow-lg"
                   >
-                    {suggestion}
+                    <div className="w-10 h-10 rounded-xl bg-[#131314] flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                      {card.icon}
+                    </div>
+                    <h3 className="text-[#e3e3e3] font-medium mb-1">{card.title}</h3>
+                    <p className="text-[#8e918f] text-sm leading-relaxed">{card.desc}</p>
                   </button>
                 ))}
               </div>
             </div>
           ) : (
-            <div className="max-w-4xl mx-auto space-y-6 pb-20">
-              {messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}
-                >
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border ${
-                    msg.role === 'user' 
-                      ? 'bg-zinc-100 dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700' 
-                      : 'bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-900/30'
-                  }`}>
-                    {msg.role === 'user' ? <User size={20} /> : <Bot size={20} className="text-blue-600 dark:text-blue-400" />}
-                  </div>
-                  <div className={`flex flex-col max-w-[80%] ${msg.role === 'user' ? 'items-end' : ''}`}>
-                    <div className={`rounded-2xl px-4 py-3 shadow-sm ${
-                      msg.role === 'user'
-                        ? 'bg-blue-600 text-white rounded-tr-none'
-                        : 'bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-tl-none text-zinc-800 dark:text-zinc-200'
-                    }`}>
-                      {msg.role === 'assistant' && !msg.content.trim() ? (
-                        <div className="py-2">
-                          <ThreeDots />
-                        </div>
-                      ) : (
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            code: CodeBlock,
-                            p: ({ children }: { children?: React.ReactNode }) => <p className="mb-4 last:mb-0 leading-relaxed">{children}</p>,
-                            ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc ml-4 mb-4 space-y-2">{children}</ul>,
-                            ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal ml-4 mb-4 space-y-2">{children}</ol>,
-                            h1: ({ children }: { children?: React.ReactNode }) => <h1 className="text-xl font-bold mb-4">{children}</h1>,
-                            h2: ({ children }: { children?: React.ReactNode }) => <h2 className="text-lg font-bold mb-3">{children}</h2>,
-                            h3: ({ children }: { children?: React.ReactNode }) => <h3 className="text-md font-bold mb-2">{children}</h3>,
-                          }}
-                        >
-                          {msg.content}
-                        </ReactMarkdown>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              
-              {/* Fallback loader if the assistant message hasn't even been added to the array yet */}
-              {isLoading && messages[messages.length - 1]?.role === 'user' && (
-                <div className="flex gap-4">
-                  <div className="w-10 h-10 rounded-full flex items-center justify-center shrink-0 border bg-blue-50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-900/30">
-                    <Bot size={20} className="text-blue-600 dark:text-blue-400" />
-                  </div>
-                  <div className="flex flex-col max-w-[80%]">
-                    <div className="rounded-2xl px-4 py-3 shadow-sm bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-tl-none">
-                      <div className="py-2">
-                        <ThreeDots />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              <div ref={messagesEndRef} />
+            <div className="flex-1 overflow-y-auto px-4 md:px-6 py-8">
+              <MessageList
+                messages={messages}
+                user={user}
+                onSuggestionClick={handleSend}
+                isLoading={isLoading}
+              />
             </div>
           )}
-        </div>
 
-        {/* Input Area */}
-        <div className="p-4 md:p-6 bg-white dark:bg-zinc-900 border-t border-zinc-200 dark:border-zinc-800">
-          <div className="max-w-4xl w-full flex mx-auto relative">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
-                }
-              }}
-              placeholder="Ask about health, diet, or exercise..."
-              className="w-full bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-700 rounded-2xl px-4 py-4 pr-14 focus:ring-2 focus:ring-blue-500 outline-none resize-none min-h-[60px] max-h-[200px] transition-all text-zinc-900 dark:text-white"
-              rows={1}
+          {/* Input Area */}
+          <div className="p-4 md:p-6 bg-gradient-to-t from-[#131314] via-[#131314] to-transparent">
+            <ChatInput
+              onSend={handleSend}
+              isLoading={isLoading}
+              onStop={handleStop}
             />
-            <button
-              onClick={handleSend}
-              disabled={isLoading || !input.trim()}
-              className="absolute right-3 bottom-3 p-2 bg-blue-600 text-white rounded-full hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600 transition-all shadow-lg shadow-blue-500/20"
-            >
-              {isLoading ? <Loader2 size={20} className="animate-spin" /> : <ArrowUp size={20} />}
-            </button>
           </div>
-          <p className="text-center text-[10px] text-zinc-400 mt-3 uppercase tracking-widest font-medium">
-            Powered by OpenRouter AI • Health & Wellness Specialist
-          </p>
         </div>
       </main>
+
+      {/* Logout Confirmation Modal */}
+      {isLogoutModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-[#1e1f20] border border-[#444746] rounded-2xl p-6 w-full max-w-sm shadow-xl flex flex-col items-center text-center">
+            <div className="w-12 h-12 bg-red-500/10 text-red-400 rounded-full flex items-center justify-center mb-4">
+              <User size={24} />
+            </div>
+            <h3 className="text-xl font-semibold text-[#e3e3e3] mb-2">Are you sure?</h3>
+            <p className="text-[#c4c7c5] mb-6 text-sm">Do you really want to log out of SuperNova?</p>
+            <div className="flex w-full gap-3">
+              <button
+                onClick={() => setIsLogoutModalOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-[#444746] text-[#e3e3e3] hover:bg-white/5 transition-colors font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setIsLogoutModalOpen(false);
+                  handleLogout();
+                }}
+                className="flex-1 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white transition-colors font-medium"
+              >
+                Yes, Log out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Health Profile Modal */}
+      <HealthProfileModal
+        isOpen={isHealthProfileModalOpen}
+        onClose={() => setIsHealthProfileModalOpen(false)}
+        initialData={user?.healthProfile as any}
+        onSave={handleUpdateHealthProfile}
+      />
+
+      {/* Settings Modal */}
+      {isSettingsModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-[#1e1f20] border border-[#444746] rounded-2xl w-full max-w-md shadow-xl overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-[#444746]">
+              <h3 className="text-lg font-semibold text-[#e3e3e3]">Settings & Help</h3>
+              <button onClick={() => setIsSettingsModalOpen(false)} className="p-1 hover:bg-white/10 rounded-full text-[#c4c7c5]">
+                <X size={20} />
+              </button>
+            </div>
+            <div className="p-6 space-y-6">
+              {/* Data Section */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-[#c4c7c5] uppercase tracking-wider">Data Management</h4>
+                <div className="p-4 bg-[#131314] rounded-xl border border-[#444746] flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-[#e3e3e3] font-medium">Clear Chat History</p>
+                    <p className="text-xs text-[#8e918f]">Delete all your conversations forever</p>
+                  </div>
+                  <button
+                    onClick={handleClearAllChats}
+                    className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 text-xs font-medium rounded-lg transition-colors border border-red-500/20"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              </div>
+
+              {/* Help Section */}
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-[#c4c7c5] uppercase tracking-wider">Quick Help</h4>
+                <div className="space-y-2">
+                  <div className="flex gap-3 items-start text-sm text-[#e3e3e3]">
+                    <div className="mt-1 w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" />
+                    <p><span className="font-bold text-blue-400">Personalization:</span> Set your profile in the top-right menu for better AI advice.</p>
+                  </div>
+                  <div className="flex gap-3 items-start text-sm text-[#e3e3e3]">
+                    <div className="mt-1 w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" />
+                    <p><span className="font-bold text-blue-400">Voice:</span> Use the mic icon to talk to SuperNova hands-free.</p>
+                  </div>
+                  <div className="flex gap-3 items-start text-sm text-[#e3e3e3]">
+                    <div className="mt-1 w-1.5 h-1.5 bg-blue-400 rounded-full shrink-0" />
+                    <p><span className="font-bold text-blue-400">Shortcuts:</span> Press <kbd className="bg-[#282a2c] px-1 rounded border border-[#444746]">Enter</kbd> to send, <kbd className="bg-[#282a2c] px-1 rounded border border-[#444746]">Shift+Enter</kbd> for new line.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="pt-4 text-center border-t border-[#444746]/50">
+                <p className="text-[10px] text-[#8e918f] uppercase tracking-widest">SuperNova v1.2.0 • Created with Love</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

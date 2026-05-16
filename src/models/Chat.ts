@@ -21,6 +21,7 @@ const ChatSchema = new Schema({
     type: Schema.Types.ObjectId,
     ref: 'User',
     required: true,
+    index: true,
   },
   title: {
     type: String,
@@ -32,6 +33,8 @@ const ChatSchema = new Schema({
     default: Date.now,
   },
 }, { timestamps: true });
+
+ChatSchema.index({ userId: 1, updatedAt: -1 });
 
 const Chat = models.Chat || model('Chat', ChatSchema);
 

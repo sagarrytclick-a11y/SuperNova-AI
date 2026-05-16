@@ -1,0 +1,119 @@
+'use client';
+
+import { useState, useRef, useEffect } from 'react';
+import { SendHorizontal, Mic, Square } from 'lucide-react';
+
+interface ChatInputProps {
+  onSend: (message: string) => void;
+  isLoading: boolean;
+  onStop: () => void;
+}
+
+export default function ChatInput({ onSend, isLoading, onStop }: ChatInputProps) {
+  const [input, setInput] = useState('');
+  const [isListening, setIsListening] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const adjustHeight = () => {
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+    }
+  };
+
+  useEffect(() => {
+    adjustHeight();
+  }, [input]);
+
+  const handleSubmit = (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (input.trim() && !isLoading) {
+      onSend(input);
+      setInput('');
+    }
+  };
+
+  const toggleListening = () => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Your browser does not support Speech Recognition.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = 'en-US';
+
+    recognition.onstart = () => setIsListening(true);
+    recognition.onend = () => setIsListening(false);
+    recognition.onresult = (event: any) => {
+      const transcript = event.results[0][0].transcript;
+      setInput(prev => prev + (prev ? ' ' : '') + transcript);
+    };
+
+    if (isListening) {
+      recognition.stop();
+    } else {
+      recognition.start();
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto relative px-4">
+      <form
+        onSubmit={handleSubmit}
+        className="relative bg-[#1e1f20] border border-[#444746] rounded-3xl overflow-hidden focus-within:border-[#4A90E2] transition-all shadow-2xl"
+      >
+        <textarea
+          ref={textareaRef}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              handleSubmit();
+            }
+          }}
+          placeholder="Ask SuperNova about your health, diet, or fitness..."
+          className="w-full bg-transparent text-[#e3e3e3] px-6 py-4 pr-32 outline-none resize-none min-h-[60px] max-h-[200px] text-[16px] placeholder-[#8e918f]"
+          rows={1}
+        />
+        <div className="absolute right-3 bottom-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleListening}
+            className={`p-2.5 rounded-full transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'text-[#c4c7c5] hover:bg-white/10'
+              }`}
+            title="Voice input"
+          >
+            <Mic size={20} />
+          </button>
+          
+          {isLoading ? (
+            <button
+              type="button"
+              onClick={onStop}
+              className="p-2.5 bg-white text-black rounded-full hover:bg-[#e3e3e3] transition-all shadow-lg"
+              title="Stop generation"
+            >
+              <Square size={20} fill="currentColor" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!input.trim()}
+              className="p-2.5 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all disabled:opacity-40 disabled:hover:bg-blue-600 shadow-lg"
+            >
+              <SendHorizontal size={20} />
+            </button>
+          )}
+        </div>
+      </form>
+      <p className="text-center text-[11px] text-[#8e918f] mt-3 tracking-wide">
+        SuperNova can make mistakes. Verify important medical information.
+      </p>
+    </div>
+  );
+}
