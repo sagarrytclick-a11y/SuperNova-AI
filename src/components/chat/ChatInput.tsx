@@ -61,10 +61,10 @@ export default function ChatInput({ onSend, isLoading, onStop }: ChatInputProps)
   };
 
   return (
-    <div className="max-w-4xl mx-auto relative px-4">
+    <div className="max-w-4xl mx-auto relative px-2 md:px-4">
       <form
         onSubmit={handleSubmit}
-        className="relative bg-[#1e1f20] border border-[#444746] rounded-3xl overflow-hidden focus-within:border-[#4A90E2] transition-all shadow-2xl"
+        className="relative bg-[#1e1f20] border border-[#444746] rounded-2xl md:rounded-3xl overflow-hidden focus-within:border-[#4A90E2] transition-all shadow-2xl"
       >
         <textarea
           ref={textareaRef}
@@ -76,11 +76,11 @@ export default function ChatInput({ onSend, isLoading, onStop }: ChatInputProps)
               handleSubmit();
             }
           }}
-          placeholder="Ask SuperNova about your health, diet, or fitness..."
-          className="w-full bg-transparent text-[#e3e3e3] px-6 py-4 pr-32 outline-none resize-none min-h-[60px] max-h-[200px] text-[16px] placeholder-[#8e918f]"
+          placeholder="Ask SuperNova..."
+          className="w-full bg-transparent text-[#e3e3e3] px-4 md:px-6 py-4 pr-24 md:pr-32 outline-none resize-none min-h-[56px] max-h-[200px] text-[15px] md:text-[16px] placeholder-[#8e918f]"
           rows={1}
         />
-        <div className="absolute right-3 bottom-3 flex items-center gap-2">
+        <div className="absolute right-2 bottom-2 md:right-3 md:bottom-3 flex items-center gap-1 md:gap-2">
           <button
             type="button"
             onClick={toggleListening}

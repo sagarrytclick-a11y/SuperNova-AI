@@ -23,7 +23,7 @@ export default function MessageList({ messages, user, onSuggestionClick, isLoadi
   }, [messages, isLoading]);
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-20">
+    <div className="max-w-4xl mx-auto space-y-6 pb-20 px-2 md:px-4">
       {messages.map((msg, i) => (
         <MessageItem
           key={i}

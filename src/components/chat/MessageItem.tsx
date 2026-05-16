@@ -24,8 +24,8 @@ export default function MessageItem({ msg, user, onSuggestionClick, isLoading, i
   const displayContent = cleanMessageContent(msg.content);
 
   return (
-    <div className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
-      <div className={`w-8 h-8 rounded-full overflow-hidden flex items-center justify-center shrink-0 ${msg.role === 'user'
+    <div className={`flex gap-2 md:gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
+      <div className={`w-7 h-7 md:w-8 md:h-8 rounded-full overflow-hidden flex items-center justify-center shrink-0 ${msg.role === 'user'
         ? 'bg-[#ab47bc] text-white'
         : 'bg-transparent text-blue-400'
         }`}>
@@ -33,17 +33,17 @@ export default function MessageItem({ msg, user, onSuggestionClick, isLoading, i
           user?.profilePicture ? (
             <Image width={100} height={100} src={user.profilePicture} alt="User" className="w-full h-full object-cover" />
           ) : (
-            <span className="text-xs font-medium">
-              {user?.username?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || <User size={16} />}
+            <span className="text-[10px] md:text-xs font-medium">
+              {user?.username?.[0]?.toUpperCase() || user?.email?.[0]?.toUpperCase() || <User size={14} />}
             </span>
           )
         ) : (
-          <Sparkles size={24} />
+          <Sparkles size={20} className="md:w-6 md:h-6" />
         )}
       </div>
-      <div className={`flex flex-col max-w-[80%] ${msg.role === 'user' ? 'items-end' : ''}`}>
-        <div className={`px-4 py-3 ${msg.role === 'user'
-          ? 'bg-[#282a2c] text-[#e3e3e3] rounded-3xl rounded-tr-sm'
+      <div className={`flex flex-col max-w-[92%] md:max-w-[80%] ${msg.role === 'user' ? 'items-end' : ''}`}>
+        <div className={`px-3 py-2 md:px-4 md:py-3 ${msg.role === 'user'
+          ? 'bg-[#282a2c] text-[#e3e3e3] rounded-2xl md:rounded-3xl rounded-tr-sm'
           : 'bg-transparent text-[#e3e3e3] rounded-none'
           }`}>
           {msg.role === 'assistant' && !msg.content.trim() && isLoading ? (

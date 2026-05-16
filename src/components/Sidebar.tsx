@@ -43,11 +43,12 @@ export default function Sidebar({
 }: SidebarProps) {
   return (
     <aside
-      className={`fixed left-0 top-0 z-20 h-full bg-[#1e1f20] transition-all duration-300 ease-in-out ${isExpanded ? "w-64" : "w-[68px]"
-        } flex flex-col`}
+      className={`fixed left-0 top-0 z-50 h-full bg-[#1e1f20] transition-all duration-300 ease-in-out 
+        ${isExpanded ? "w-64 translate-x-0" : "w-[68px] -translate-x-full md:translate-x-0"} 
+        flex flex-col shadow-2xl md:shadow-none`}
     >
-      {/* Sidebar Toggle */}
-      <div className="pt-4 px-4 pb-2">
+      {/* Sidebar Toggle - Hidden on mobile, controlled by header hamburger */}
+      <div className="pt-4 px-4 pb-2 hidden md:block">
         <button
           onClick={() => setIsExpanded(!isExpanded)}
           className="flex h-10 w-10 items-center justify-center rounded-full hover:bg-white/10 text-[#e3e3e3] transition-colors"

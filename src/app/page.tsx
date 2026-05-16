@@ -4,7 +4,8 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   User, Bot, Check, Sparkles, LayoutGrid, Circle,
-  Download, X, Mic, SendHorizontal, Square, Pencil, Copy
+  Download, X, Mic, SendHorizontal, Square, Pencil, Copy,
+  Menu
 } from 'lucide-react';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -17,7 +18,6 @@ import ChatInput from '@/components/chat/ChatInput';
 import { useUser } from '@/hooks/useUser';
 import { useChat, useChatDetails } from '@/hooks/useChat';
 import { formatChatForExport, downloadChatExport } from '@/lib/chat-utils';
-import { useQueryClient } from '@tanstack/react-query';
 
 export default function Home() {
   const [token, setToken] = useState<string | null>(null);
@@ -25,7 +25,7 @@ export default function Home() {
   const [isProfileMenuOpen, setIsProfileMenuOpen] = useState(false);
   const [messages, setMessages] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSidebarExpanded, setIsSidebarExpanded] = useState(true);
+  const [isSidebarExpanded, setIsSidebarExpanded] = useState(false); // Default false for mobile
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
   const [copiedMessageId, setCopiedMessageId] = useState<number | null>(null);
   const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
@@ -34,12 +34,10 @@ export default function Home() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const lastChatIdRef = useRef<string | null>(null);
 
-  const queryClient = useQueryClient();
-
-  // TanStack Query Hooks
+  // Data fetching hooks (Refactored from TanStack Query)
   const { user, updateProfile } = useUser(token);
   const { history, isHistoryLoading, deleteChat, clearAllChats, refreshHistory } = useChat(token);
-  const { data: activeChatDetails } = useChatDetails(token, activeChatId);
+  const { data: activeChatDetails, refreshDetails, isLoading: isDetailsLoading } = useChatDetails(token, activeChatId);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
@@ -77,40 +75,60 @@ export default function Home() {
   }, [token, isCheckingAuth, router]);
 
   // Load chat details
+  // Screen size check for initial sidebar state
+  useEffect(() => {
+    if (window.innerWidth >= 768) {
+      setIsSidebarExpanded(true);
+    }
+  }, []);
+
   // Sync messages from server
   useEffect(() => {
-    const isChatSwitch = activeChatId !== lastChatIdRef.current;
-    
-    // If we are currently streaming the active chat, don't let background syncs interfere
-    if (isLoading && activeChatId && !isChatSwitch) return;
-
-    if (isChatSwitch) {
-      if (activeChatDetails?.messages) {
-        setMessages(activeChatDetails.messages);
-        lastChatIdRef.current = activeChatId;
-      } else if (!activeChatId) {
+    // 1. Handle "New Chat" state (activeChatId is null)
+    if (!activeChatId) {
+      if (messages.length > 0 && !isLoading) {
         setMessages([]);
-        lastChatIdRef.current = null;
-      } else {
-        // We switched to an ID but don't have data yet.
-        // Only clear if we aren't currently in the middle of a stream for this new ID.
-        // (This happens when the first message of a new chat is being processed)
-        if (!isLoading && messages.length > 0) {
-          setMessages([]);
-        }
-        
-        // If we just finished a stream (isLoading just became false), 
-        // we might still be waiting for the server to return the data.
-        // We DON'T update lastChatIdRef.current here so that we try again when data arrives.
       }
-    } else if (activeChatDetails?.messages && !isLoading) {
-      // Sync for final consistency after streaming or background updates
-      // Only update if the messages are actually different to avoid flicker
-      if (JSON.stringify(activeChatDetails.messages) !== JSON.stringify(messages)) {
-        setMessages(activeChatDetails.messages);
+      lastChatIdRef.current = null;
+      return;
+    }
+
+    const isChatSwitch = activeChatId !== lastChatIdRef.current;
+
+    // 2. Handle Chat Switch (user clicked a different chat)
+    if (isChatSwitch) {
+      // If the details we have match the active chat ID, sync them
+      if (activeChatDetails?._id === activeChatId) {
+        setMessages(activeChatDetails.messages || []);
+        lastChatIdRef.current = activeChatId;
+      } else {
+        // We switched IDs but don't have the data for the new ID yet.
+        // Clear local messages unless we are currently streaming a response for this new ID.
+        if (!isLoading) {
+          if (messages.length > 0) {
+            setMessages([]);
+          }
+          // Note: We don't update lastChatIdRef.current here yet. 
+          // We wait until data arrives or stream starts to consider the switch "complete".
+        } else {
+          // We are streaming. This happens when a new chat is started.
+          // Acknowledge the switch so we don't keep hitting this block.
+          lastChatIdRef.current = activeChatId;
+        }
+      }
+      return;
+    }
+
+    // 3. Handle Background/Final Sync (same ID, data updated)
+    if (activeChatDetails?._id === activeChatId && !isLoading && !isDetailsLoading) {
+      // Only sync if the server data is as long or longer than local state (not stale)
+      if (activeChatDetails.messages?.length >= messages.length) {
+        if (JSON.stringify(activeChatDetails.messages) !== JSON.stringify(messages)) {
+          setMessages(activeChatDetails.messages);
+        }
       }
     }
-  }, [activeChatId, activeChatDetails?.messages, isLoading, messages.length]);
+  }, [activeChatId, activeChatDetails, isLoading, isDetailsLoading, messages.length]);
 
   const handleUpdateHealthProfile = async (healthData: any) => {
     try {
@@ -182,7 +200,7 @@ export default function Home() {
 
     const newMessage = { role: 'user', content: userMessage };
     const assistantPlaceholder = { role: 'assistant', content: '' };
-    
+
     setMessages(prev => [...prev, newMessage, assistantPlaceholder]);
     setIsLoading(true);
 
@@ -211,7 +229,7 @@ export default function Home() {
 
       const reader = response.body?.getReader();
       if (!reader) throw new Error('Failed to get stream reader');
-      
+
       const decoder = new TextDecoder();
       let assistantMessage = '';
 
@@ -254,12 +272,10 @@ export default function Home() {
     } finally {
       abortControllerRef.current = null;
       setIsLoading(false);
-      
-      // Invalidate to keep history in sync, but local 'messages' won't be overwritten 
-      // because of the ID check in useEffect
-      queryClient.invalidateQueries({ queryKey: ['chatHistory', token] });
+
+      refreshHistory();
       if (activeChatId) {
-        queryClient.invalidateQueries({ queryKey: ['chatDetails', token, activeChatId] });
+        refreshDetails();
       }
     }
   };
@@ -283,7 +299,15 @@ export default function Home() {
   }
 
   return (
-    <div className="flex h-screen bg-[#131314] text-[#e3e3e3] overflow-hidden">
+    <div className="flex h-screen bg-[#131314] text-[#e3e3e3] overflow-hidden relative">
+      {/* Sidebar Backdrop - visible only on mobile when expanded */}
+      {isSidebarExpanded && (
+        <div
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden transition-opacity"
+          onClick={() => setIsSidebarExpanded(false)}
+        />
+      )}
+
       <Sidebar
         isExpanded={isSidebarExpanded}
         setIsExpanded={setIsSidebarExpanded}
@@ -297,11 +321,17 @@ export default function Home() {
         onOpenSettings={() => setIsSettingsModalOpen(true)}
       />
 
-      <main className={`flex-1 flex flex-col transition-all duration-300 ${isSidebarExpanded ? 'ml-64' : 'ml-[68px]'}`}>
-        <header className="h-16 flex items-center justify-between px-4 lg:px-6 bg-[#131314] z-10">
+      <main className={`flex-1 flex flex-col transition-all duration-300 w-full ${isSidebarExpanded ? 'md:ml-64' : 'md:ml-[68px]'}`}>
+        <header className="h-16 flex items-center justify-between px-4 lg:px-6 bg-[#131314] z-10 border-b border-[#444746]/30 md:border-none">
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setIsSidebarExpanded(!isSidebarExpanded)}
+              className="p-2 -ml-2 text-[#c4c7c5] hover:text-[#e3e3e3] md:hidden"
+            >
+              <Menu size={24} />
+            </button>
             <Image src="/logo-2.png" alt="AI" width={30} height={30} />
-            <h1 className="text-[22px] font-medium text-[#e3e3e3]">SuperNova</h1>
+            <h1 className="text-xl md:text-[22px] font-medium text-[#e3e3e3]">SuperNova</h1>
           </div>
 
           <div className="flex items-center gap-3 md:gap-4">
@@ -402,10 +432,10 @@ export default function Home() {
                   <Image src="/logo-2.png" alt="AI" width={40} height={40} className="animate-pulse" />
                 </div>
                 <div className="text-center">
-                  <h2 className="text-4xl font-semibold mb-3 ">
+                  <h2 className="text-2xl md:text-4xl font-semibold mb-3 ">
                     Hello, {user?.username || 'Wellness Explorer'}
                   </h2>
-                  <p className="text-[#c4c7c5] text-lg max-w-md mx-auto">
+                  <p className="text-[#c4c7c5] text-base md:text-lg max-w-md mx-auto">
                     How can I help you reach your health and fitness goals today?
                   </p>
                 </div>

@@ -1,68 +1,116 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState, useEffect, useCallback } from 'react';
 
 export function useChat(token: string | null) {
-  const queryClient = useQueryClient();
+  const [history, setHistory] = useState<any[]>([]);
+  const [isHistoryLoading, setIsHistoryLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const historyQuery = useQuery({
-    queryKey: ['chatHistory', token],
-    queryFn: async () => {
+  const fetchHistory = useCallback(async () => {
+    if (!token) {
+      setHistory([]);
+      return;
+    }
+
+    setIsHistoryLoading(true);
+    setError(null);
+    try {
       const res = await fetch('/api/chat', {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Failed to fetch history');
-      return res.json();
-    },
-    enabled: !!token,
-  });
+      const data = await res.json();
+      setHistory(data || []);
+    } catch (err: any) {
+      setError(err.message);
+      console.error('Error fetching history:', err);
+    } finally {
+      setIsHistoryLoading(false);
+    }
+  }, [token]);
 
-  const deleteChatMutation = useMutation({
-    mutationFn: async (chatId: string) => {
+  useEffect(() => {
+    fetchHistory();
+  }, [fetchHistory]);
+
+  const deleteChat = async (chatId: string) => {
+    if (!token) return;
+    try {
       const res = await fetch(`/api/chat?chatId=${chatId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Failed to delete chat');
+      await fetchHistory();
       return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['chatHistory', token] });
-    },
-  });
+    } catch (err) {
+      console.error('Failed to delete chat', err);
+      throw err;
+    }
+  };
 
-  const clearAllChatsMutation = useMutation({
-    mutationFn: async () => {
+  const clearAllChats = async () => {
+    if (!token) return;
+    try {
       const res = await fetch('/api/chat?all=true', {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Failed to clear chats');
+      setHistory([]);
       return res.json();
-    },
-    onSuccess: () => {
-      queryClient.setQueryData(['chatHistory', token], []);
-    },
-  });
+    } catch (err) {
+      console.error('Failed to clear chats', err);
+      throw err;
+    }
+  };
 
   return {
-    history: historyQuery.data || [],
-    isHistoryLoading: historyQuery.isLoading,
-    deleteChat: deleteChatMutation.mutateAsync,
-    clearAllChats: clearAllChatsMutation.mutateAsync,
-    refreshHistory: () => queryClient.invalidateQueries({ queryKey: ['chatHistory', token] }),
+    history,
+    isHistoryLoading,
+    deleteChat,
+    clearAllChats,
+    refreshHistory: fetchHistory,
+    error
   };
 }
 
 export function useChatDetails(token: string | null, chatId: string | null) {
-  return useQuery({
-    queryKey: ['chatDetails', token, chatId],
-    queryFn: async () => {
-      if (!chatId) return null;
+  const [data, setData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetchDetails = useCallback(async () => {
+    if (!token || !chatId) {
+      setData(null);
+      return;
+    }
+
+    setIsLoading(true);
+    setError(null);
+    try {
       const res = await fetch(`/api/chat?chatId=${chatId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!res.ok) throw new Error('Failed to fetch chat details');
-      return res.json();
-    },
-    enabled: !!token && !!chatId,
-  });
+      const json = await res.json();
+      setData(json);
+    } catch (err: any) {
+      setError(err.message);
+      console.error('Error fetching chat details:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token, chatId]);
+
+  useEffect(() => {
+    setData(null);
+    fetchDetails();
+  }, [chatId, fetchDetails]);
+
+  return {
+    data,
+    isLoading,
+    error,
+    refreshDetails: fetchDetails
+  };
 }
