@@ -64,7 +64,7 @@ export default function ChatInput({ onSend, isLoading, onStop }: ChatInputProps)
     <div className="max-w-4xl mx-auto relative px-2 md:px-4">
       <form
         onSubmit={handleSubmit}
-        className="relative bg-[#1e1f20] border border-[#444746] rounded-2xl md:rounded-3xl overflow-hidden focus-within:border-[#4A90E2] transition-all shadow-2xl"
+        className="relative bg-[#1e1f20] border border-[#444746] rounded-2xl md:rounded-3xl overflow-hidden  transition-all shadow-2xl"
       >
         <textarea
           ref={textareaRef}

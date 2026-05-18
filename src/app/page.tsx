@@ -32,6 +32,7 @@ export default function Home() {
   const [isHealthProfileModalOpen, setIsHealthProfileModalOpen] = useState(false);
   const [selectedMode, setSelectedMode] = useState('Standard');
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isChatSwitching, setIsChatSwitching] = useState(false);
   const lastChatIdRef = useRef<string | null>(null);
 
   // Data fetching hooks (Refactored from TanStack Query)
@@ -89,6 +90,7 @@ export default function Home() {
       if (messages.length > 0 && !isLoading) {
         setMessages([]);
       }
+      setIsChatSwitching(false);
       lastChatIdRef.current = null;
       return;
     }
@@ -97,10 +99,12 @@ export default function Home() {
 
     // 2. Handle Chat Switch (user clicked a different chat)
     if (isChatSwitch) {
+      setIsChatSwitching(true);
       // If the details we have match the active chat ID, sync them
       if (activeChatDetails?._id === activeChatId) {
         setMessages(activeChatDetails.messages || []);
         lastChatIdRef.current = activeChatId;
+        setIsChatSwitching(false);
       } else {
         // We switched IDs but don't have the data for the new ID yet.
         // Clear local messages unless we are currently streaming a response for this new ID.
@@ -114,6 +118,7 @@ export default function Home() {
           // We are streaming. This happens when a new chat is started.
           // Acknowledge the switch so we don't keep hitting this block.
           lastChatIdRef.current = activeChatId;
+          setIsChatSwitching(false);
         }
       }
       return;
@@ -121,6 +126,7 @@ export default function Home() {
 
     // 3. Handle Background/Final Sync (same ID, data updated)
     if (activeChatDetails?._id === activeChatId && !isLoading && !isDetailsLoading) {
+      setIsChatSwitching(false);
       // Only sync if the server data is as long or longer than local state (not stale)
       if (activeChatDetails.messages?.length >= messages.length) {
         if (JSON.stringify(activeChatDetails.messages) !== JSON.stringify(messages)) {
@@ -428,8 +434,8 @@ export default function Home() {
           {messages.length === 0 ? (
             <div className="flex-1 flex flex-col items-center justify-center px-4">
               <div className="flex flex-col items-center gap-6 mb-12 animate-in fade-in zoom-in duration-700">
-                <div className="w-16 h-16 bg-[#131314] rounded-2xl flex items-center justify-center shadow-2xl border border-[#444746]">
-                  <Image src="/logo-2.png" alt="AI" width={40} height={40} className="animate-pulse" />
+                <div className="w-20 h-20 bg-[#131314] flex items-center justify-center shadow-2xl">
+                  <Image src="/logo-2.png" alt="AI" width={70} height={70} />
                 </div>
                 <div className="text-center">
                   <h2 className="text-2xl md:text-4xl font-semibold mb-3 ">
@@ -463,12 +469,28 @@ export default function Home() {
             </div>
           ) : (
             <div className="flex-1 overflow-y-auto px-4 md:px-6 py-8">
-              <MessageList
-                messages={messages}
-                user={user}
-                onSuggestionClick={handleSend}
-                isLoading={isLoading}
-              />
+              {(isChatSwitching || (isDetailsLoading && activeChatId && messages.length === 0)) ? (
+                <div className="max-w-4xl mx-auto space-y-6">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="space-y-3">
+                      <div className="flex items-start gap-4">
+                        <div className="w-8 h-8 rounded-full bg-[#282a2c] animate-pulse shrink-0" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-4 bg-[#282a2c] rounded animate-pulse w-3/4" />
+                          <div className="h-4 bg-[#282a2c] rounded animate-pulse w-1/2" />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <MessageList
+                  messages={messages}
+                  user={user}
+                  onSuggestionClick={handleSend}
+                  isLoading={isLoading}
+                />
+              )}
             </div>
           )}
 

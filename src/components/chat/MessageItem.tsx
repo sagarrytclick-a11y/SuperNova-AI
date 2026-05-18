@@ -1,6 +1,7 @@
 'use client';
 
-import { Sparkles, User } from 'lucide-react';
+import { useState } from 'react';
+import { Sparkles, User, Copy, Check, Pencil } from 'lucide-react';
 import Image from 'next/image';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -15,13 +16,25 @@ interface MessageItemProps {
   };
   user: any;
   onSuggestionClick: (suggestion: string) => void;
+  onEditClick?: (content: string) => void; // Added for edit prompt functionality
   isLoading?: boolean;
   isLast?: boolean;
 }
 
-export default function MessageItem({ msg, user, onSuggestionClick, isLoading, isLast }: MessageItemProps) {
+export default function MessageItem({ msg, user, onSuggestionClick, onEditClick, isLoading, isLast }: MessageItemProps) {
+  const [isCopied, setIsCopied] = useState(false);
   const suggestions = msg.role === 'assistant' ? parseSuggestions(msg.content) : [];
   const displayContent = cleanMessageContent(msg.content);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(msg.content);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
+    }
+  };
 
   return (
     <div className={`flex gap-2 md:gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
@@ -78,6 +91,47 @@ export default function MessageItem({ msg, user, onSuggestionClick, isLoading, i
             ))}
           </div>
         )}
+
+        {/* Action Tray: Handles Copy Prompt, Edit Prompt, and Copy Response */}
+        <div className="flex items-center gap-3 mt-1.5 px-1 text-[#94A3B8]">
+          {msg.role === 'user' ? (
+            <>
+              {onEditClick && (
+                <button
+                  onClick={() => onEditClick(msg.content)}
+                  className="flex items-center gap-1 text-xs hover:text-[#e3e3e3] transition-colors"
+                  title="Edit prompt"
+                >
+                  <Pencil size={13} />
+                  <span>Edit</span>
+                </button>
+              )}
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1 text-xs hover:text-[#e3e3e3] transition-colors"
+                title="Copy prompt"
+              >
+                {isCopied ? <Check size={13} className="text-green-400" /> : <Copy size={13} />}
+                <span className={isCopied ? 'text-green-400' : ''}>
+                  {isCopied ? 'Copied!' : 'Copy'}
+                </span>
+              </button>
+            </>
+          ) : (
+            (!isLoading || msg.content.trim()) && (
+              <button
+                onClick={handleCopy}
+                className="flex items-center gap-1 text-xs p-1 hover:text-[#e3e3e3] transition-colors self-start"
+                title="Copy response"
+              >
+                {isCopied ? <Check size={13} className="text-blue-400" /> : <Copy size={13} />}
+                <span className={isCopied ? 'text-blue-400' : ''}>
+                  {isCopied ? 'Copied!' : 'Copy'}
+                </span>
+              </button>
+            )
+          )}
+        </div>
       </div>
     </div>
   );
