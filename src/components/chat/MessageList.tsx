@@ -12,10 +12,12 @@ interface MessageListProps {
   messages: Message[];
   user: any;
   onSuggestionClick: (suggestion: string) => void;
+  onRegenerate?: () => void;
+  onFeedback?: (feedback: 'up' | 'down') => void;
   isLoading: boolean;
 }
 
-export default function MessageList({ messages, user, onSuggestionClick, isLoading }: MessageListProps) {
+export default function MessageList({ messages, user, onSuggestionClick, onRegenerate, onFeedback, isLoading }: MessageListProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -30,6 +32,8 @@ export default function MessageList({ messages, user, onSuggestionClick, isLoadi
           msg={msg}
           user={user}
           onSuggestionClick={onSuggestionClick}
+          onRegenerate={onRegenerate}
+          onFeedback={onFeedback}
           isLoading={isLoading}
           isLast={i === messages.length - 1}
         />

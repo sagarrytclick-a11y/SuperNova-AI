@@ -1,5 +1,7 @@
 "use client";
 
+import { useState, useEffect } from "react";
+
 import {
   Menu,
   Edit,
@@ -9,7 +11,9 @@ import {
   Settings,
   MessageSquare,
   Trash2,
+  Search,
 } from "lucide-react";
+
 
 interface ChatHistoryItem {
   _id: string;
@@ -28,6 +32,8 @@ interface SidebarProps {
   isHistoryLoading?: boolean;
   onDeleteChat: (chatId: string) => void;
   onOpenSettings: () => void;
+  activeView: 'chat' | 'search';
+  setActiveView: (view: 'chat' | 'search') => void;
 }
 
 export default function Sidebar({
@@ -40,7 +46,10 @@ export default function Sidebar({
   isHistoryLoading,
   onDeleteChat,
   onOpenSettings,
+  activeView,
+  setActiveView,
 }: SidebarProps) {
+
   return (
     <aside
       className={`fixed left-0 top-0 z-50 h-full bg-[#1e1f20] transition-all duration-300 ease-in-out 
@@ -70,10 +79,33 @@ export default function Sidebar({
           {isExpanded && <span className="text-sm">New chat</span>}
         </button>
 
+        {/* Search Chats Button */}
+        <button
+          onClick={() => setActiveView('search')}
+          className={`mt-1 flex h-10 items-center rounded-full transition-colors ${
+            activeView === 'search'
+              ? "bg-[#282a2c] text-white"
+              : "hover:bg-white/10 text-[#e3e3e3]"
+          } ${isExpanded
+              ? "w-full px-3 gap-3 justify-start"
+              : "hover:bg-white/10 w-10 justify-center"
+            }`}
+        >
+          <Search size={18} />
+          {isExpanded ? (
+            <>
+              <span className="text-sm">Search chats</span>
+              <span className="ml-auto text-xs text-[#c4c7c5]/50">Ctrl+Shift+K</span>
+            </>
+          ) : (
+            <div className="absolute left-full ml-2 hidden group-hover:block px-3 py-1 bg-[#e3e3e3] text-black text-xs font-medium rounded shadow-lg whitespace-nowrap z-50">
+              Search chats
+            </div>
+          )}
+        </button>
+
         {isExpanded && (
           <>
-            {/* Nav Items */}
-
             {/* Chats History */}
             <div className="mt-4 flex-1">
               <h3 className="px-3 py-1.5 text-xs font-medium text-[#c4c7c5]">
@@ -100,9 +132,12 @@ export default function Sidebar({
                       className="group relative flex items-center"
                     >
                       <button
-                        onClick={() => onSelectChat(chat._id)}
+                        onClick={() => {
+                          onSelectChat(chat._id);
+                          setActiveView('chat');
+                        }}
                         className={`group relative flex w-full items-center gap-3 rounded-full px-3 py-2.5 text-sm transition-colors text-left ${
-                          activeChatId === chat._id
+                          activeChatId === chat._id && activeView === 'chat'
                             ? "bg-[#282a2c] text-white font-medium"
                             : "text-[#e3e3e3] hover:bg-white/10"
                         }`}
@@ -133,6 +168,7 @@ export default function Sidebar({
           </>
         )}
       </div>
+
 
       {/* Settings & Help Section */}
       <div className="p-3">

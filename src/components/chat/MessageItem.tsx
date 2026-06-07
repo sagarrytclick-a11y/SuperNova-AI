@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Sparkles, User, Copy, Check, Pencil } from 'lucide-react';
+import { Sparkles, User, Copy, Check, Pencil, ThumbsUp, ThumbsDown, RotateCcw, MoreHorizontal } from 'lucide-react';
 import Image from 'next/image';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -16,12 +16,28 @@ interface MessageItemProps {
   };
   user: any;
   onSuggestionClick: (suggestion: string) => void;
-  onEditClick?: (content: string) => void; // Added for edit prompt functionality
+  onEditClick?: (content: string) => void;
+  onRegenerate?: () => void;
+  onFeedback?: (feedback: 'up' | 'down') => void;
   isLoading?: boolean;
   isLast?: boolean;
 }
 
-export default function MessageItem({ msg, user, onSuggestionClick, onEditClick, isLoading, isLast }: MessageItemProps) {
+const ActionButton = ({ icon: Icon, tooltip, onClick }: { icon: any, tooltip: string, onClick?: () => void }) => (
+  <button 
+    onClick={onClick}
+    className="group relative p-1.5 hover:bg-white/10 rounded-full text-white transition-all"
+    title={tooltip}
+  >
+    <Icon size={18} />
+    <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover:block px-3 py-1 bg-white text-black text-xs font-medium rounded-lg shadow-xl whitespace-nowrap z-50">
+      {tooltip}
+      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-white" />
+    </div>
+  </button>
+);
+
+export default function MessageItem({ msg, user, onSuggestionClick, onEditClick, onRegenerate, onFeedback, isLoading, isLast }: MessageItemProps) {
   const [isCopied, setIsCopied] = useState(false);
   const suggestions = msg.role === 'assistant' ? parseSuggestions(msg.content) : [];
   const displayContent = cleanMessageContent(msg.content);
@@ -92,8 +108,8 @@ export default function MessageItem({ msg, user, onSuggestionClick, onEditClick,
           </div>
         )}
 
-        {/* Action Tray: Handles Copy Prompt, Edit Prompt, and Copy Response */}
-        <div className="flex items-center gap-3 mt-1.5 px-1 text-[#94A3B8]">
+        {/* Action Tray: Handles Copy Prompt, Edit Prompt, and Assistant Actions */}
+        <div className={`flex items-center gap-3 mt-1.5 px-1 text-[#94A3B8] transition-opacity duration-200`}>
           {msg.role === 'user' ? (
             <>
               {onEditClick && (
@@ -119,16 +135,32 @@ export default function MessageItem({ msg, user, onSuggestionClick, onEditClick,
             </>
           ) : (
             (!isLoading || msg.content.trim()) && (
-              <button
-                onClick={handleCopy}
-                className="flex items-center gap-1 text-xs p-1 hover:text-[#e3e3e3] transition-colors self-start"
-                title="Copy response"
-              >
-                {isCopied ? <Check size={13} className="text-blue-400" /> : <Copy size={13} />}
-                <span className={isCopied ? 'text-blue-400' : ''}>
-                  {isCopied ? 'Copied!' : 'Copy'}
-                </span>
-              </button>
+              <div className="flex items-center gap-2">
+                <ActionButton 
+                  icon={ThumbsUp} 
+                  tooltip="Good response" 
+                  onClick={() => onFeedback?.('up')} 
+                />
+                <ActionButton 
+                  icon={ThumbsDown} 
+                  tooltip="Bad response" 
+                  onClick={() => onFeedback?.('down')} 
+                />
+                <ActionButton 
+                  icon={RotateCcw} 
+                  tooltip="Regenerate" 
+                  onClick={onRegenerate} 
+                />
+                <ActionButton 
+                  icon={Copy} 
+                  tooltip="Copy response" 
+                  onClick={handleCopy} 
+                />
+                <ActionButton 
+                  icon={MoreHorizontal} 
+                  tooltip="More" 
+                />
+              </div>
             )
           )}
         </div>

@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import {
   User, Bot, Check, Sparkles, LayoutGrid, Circle,
   Download, X, Mic, SendHorizontal, Square, Pencil, Copy,
@@ -15,6 +16,7 @@ import Sidebar from '@/components/Sidebar';
 import HealthProfileModal from '@/components/HealthProfileModal';
 import MessageList from '@/components/chat/MessageList';
 import ChatInput from '@/components/chat/ChatInput';
+import SearchDashboard from '@/components/chat/SearchDashboard';
 import { useUser } from '@/hooks/useUser';
 import { useChat, useChatDetails } from '@/hooks/useChat';
 import { formatChatForExport, downloadChatExport } from '@/lib/chat-utils';
@@ -33,12 +35,14 @@ export default function Home() {
   const [selectedMode, setSelectedMode] = useState('Standard');
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isChatSwitching, setIsChatSwitching] = useState(false);
+  const [activeView, setActiveView] = useState<'chat' | 'search'>('chat');
   const lastChatIdRef = useRef<string | null>(null);
 
   // Data fetching hooks (Refactored from TanStack Query)
   const { user, updateProfile } = useUser(token);
   const { history, isHistoryLoading, deleteChat, clearAllChats, refreshHistory } = useChat(token);
   const { data: activeChatDetails, refreshDetails, isLoading: isDetailsLoading } = useChatDetails(token, activeChatId);
+  const queryClient = useQueryClient();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const profileMenuRef = useRef<HTMLDivElement>(null);
@@ -82,6 +86,21 @@ export default function Home() {
       setIsSidebarExpanded(true);
     }
   }, []);
+
+  // Keyboard shortcut for search
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey && e.shiftKey && e.key === 'K') {
+        e.preventDefault();
+        setActiveView((prev) => prev === 'search' ? 'chat' : 'search');
+      }
+      if (e.key === 'Escape' && activeView === 'search') {
+        setActiveView('chat');
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [activeView]);
 
   // Sync messages from server
   useEffect(() => {
@@ -148,6 +167,7 @@ export default function Home() {
   const handleDeleteChat = async (chatId: string) => {
     try {
       await deleteChat(chatId);
+      queryClient.invalidateQueries({ queryKey: ['chatsHistory'] });
       if (activeChatId === chatId) {
         handleNewChat();
       }
@@ -159,6 +179,7 @@ export default function Home() {
   const handleClearAllChats = async () => {
     try {
       await clearAllChats();
+      queryClient.invalidateQueries({ queryKey: ['chatsHistory'] });
       setMessages([]);
       setActiveChatId(null);
       setIsSettingsModalOpen(false);
@@ -196,6 +217,27 @@ export default function Home() {
       abortControllerRef.current = null;
       setIsLoading(false);
     }
+  };
+
+  const handleRegenerate = async () => {
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    if (!lastUserMsg) return;
+    
+    // Remove the last assistant response before regenerating
+    setMessages(prev => {
+      const newMsgs = [...prev];
+      if (newMsgs.length > 0 && newMsgs[newMsgs.length - 1].role === 'assistant') {
+        newMsgs.pop();
+      }
+      return newMsgs;
+    });
+    
+    await handleSend(lastUserMsg.content);
+  };
+
+  const handleFeedback = (feedback: 'up' | 'down') => {
+    console.log(`Feedback received: ${feedback}`);
+    // Implement feedback API call here
   };
 
   const handleSend = async (userMessage: string) => {
@@ -289,6 +331,7 @@ export default function Home() {
   const handleNewChat = () => {
     setActiveChatId(null);
     setMessages([]);
+    setActiveView('chat');
   };
 
   const handleLogout = () => {
@@ -325,6 +368,8 @@ export default function Home() {
         isHistoryLoading={isHistoryLoading}
         onDeleteChat={handleDeleteChat}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
+        activeView={activeView}
+        setActiveView={setActiveView}
       />
 
       <main className={`flex-1 flex flex-col transition-all duration-300 w-full ${isSidebarExpanded ? 'md:ml-64' : 'md:ml-[68px]'}`}>
@@ -431,77 +476,90 @@ export default function Home() {
         </header>
 
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          {messages.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center px-4">
-              <div className="flex flex-col items-center gap-6 mb-12 animate-in fade-in zoom-in duration-700">
-                <div className="w-20 h-20 bg-[#131314] flex items-center justify-center shadow-2xl">
-                  <Image src="/logo-2.png" alt="AI" width={70} height={70} />
-                </div>
-                <div className="text-center">
-                  <h2 className="text-2xl md:text-4xl font-semibold mb-3 ">
-                    Hello, {user?.username || 'Wellness Explorer'}
-                  </h2>
-                  <p className="text-[#c4c7c5] text-base md:text-lg max-w-md mx-auto">
-                    How can I help you reach your health and fitness goals today?
-                  </p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full max-w-5xl">
-                {[
-                  { icon: <Bot className="text-blue-400" />, title: "Meal Planning", desc: "Create a 7-day personalized diet plan." },
-                  { icon: <LayoutGrid className="text-purple-400" />, title: "Workout Routine", desc: "Build a strength training program." },
-                  { icon: <Circle className="text-green-400" />, title: "Health Analysis", desc: "Calculate your BMR and TDEE metrics." }
-                ].map((card, i) => (
-                  <button
-                    key={i}
-                    onClick={() => handleSend(card.desc)}
-                    className="p-5 bg-[#1e1f20] border border-[#444746] rounded-2xl text-left hover:bg-[#282a2c] transition-all group hover:scale-[1.02] duration-300 shadow-lg"
-                  >
-                    <div className="w-10 h-10 rounded-xl bg-[#131314] flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                      {card.icon}
-                    </div>
-                    <h3 className="text-[#e3e3e3] font-medium mb-1">{card.title}</h3>
-                    <p className="text-[#8e918f] text-sm leading-relaxed">{card.desc}</p>
-                  </button>
-                ))}
-              </div>
-            </div>
+          {activeView === 'search' ? (
+            <SearchDashboard
+              token={token}
+              onSelectChat={(id) => setActiveChatId(id)}
+              setActiveView={setActiveView}
+              onDeleteChat={handleDeleteChat}
+            />
           ) : (
-            <div className="flex-1 overflow-y-auto px-4 md:px-6 py-8">
-              {(isChatSwitching || (isDetailsLoading && activeChatId && messages.length === 0)) ? (
-                <div className="max-w-4xl mx-auto space-y-6">
-                  {[1, 2, 3].map((i) => (
-                    <div key={i} className="space-y-3">
-                      <div className="flex items-start gap-4">
-                        <div className="w-8 h-8 rounded-full bg-[#282a2c] animate-pulse shrink-0" />
-                        <div className="flex-1 space-y-2">
-                          <div className="h-4 bg-[#282a2c] rounded animate-pulse w-3/4" />
-                          <div className="h-4 bg-[#282a2c] rounded animate-pulse w-1/2" />
-                        </div>
-                      </div>
+            <>
+              {messages.length === 0 ? (
+                <div className="flex-1 flex flex-col items-center justify-center px-4">
+                  <div className="flex flex-col items-center gap-6 mb-12 animate-in fade-in zoom-in duration-700">
+                    <div className="w-20 h-20 bg-[#131314] flex items-center justify-center shadow-2xl">
+                      <Image src="/logo-2.png" alt="AI" width={70} height={70} />
                     </div>
-                  ))}
+                    <div className="text-center">
+                      <h2 className="text-2xl md:text-4xl font-semibold mb-3 ">
+                        Hello, {user?.username || 'Wellness Explorer'}
+                      </h2>
+                      <p className="text-[#c4c7c5] text-base md:text-lg max-w-md mx-auto">
+                        How can I help you reach your health and fitness goals today?
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 w-full max-w-5xl">
+                    {[
+                      { icon: <Bot className="text-blue-400" />, title: "Meal Planning", desc: "Create a 7-day personalized diet plan." },
+                      { icon: <LayoutGrid className="text-purple-400" />, title: "Workout Routine", desc: "Build a strength training program." },
+                      { icon: <Circle className="text-green-400" />, title: "Health Analysis", desc: "Calculate your BMR and TDEE metrics." }
+                    ].map((card, i) => (
+                      <button
+                        key={i}
+                        onClick={() => handleSend(card.desc)}
+                        className="p-5 bg-[#1e1f20] border border-[#444746] rounded-2xl text-left hover:bg-[#282a2c] transition-all group hover:scale-[1.02] duration-300 shadow-lg"
+                      >
+                        <div className="w-10 h-10 rounded-xl bg-[#131314] flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                          {card.icon}
+                        </div>
+                        <h3 className="text-[#e3e3e3] font-medium mb-1">{card.title}</h3>
+                        <p className="text-[#8e918f] text-sm leading-relaxed">{card.desc}</p>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : (
-                <MessageList
-                  messages={messages}
-                  user={user}
-                  onSuggestionClick={handleSend}
-                  isLoading={isLoading}
-                />
+                <div className="flex-1 overflow-y-auto px-4 md:px-6 py-8">
+                  {(isChatSwitching || (isDetailsLoading && activeChatId && messages.length === 0)) ? (
+                    <div className="max-w-4xl mx-auto space-y-6">
+                      {[1, 2, 3].map((i) => (
+                        <div key={i} className="space-y-3">
+                          <div className="flex items-start gap-4">
+                            <div className="w-8 h-8 rounded-full bg-[#282a2c] animate-pulse shrink-0" />
+                            <div className="flex-1 space-y-2">
+                              <div className="h-4 bg-[#282a2c] rounded animate-pulse w-3/4" />
+                              <div className="h-4 bg-[#282a2c] rounded animate-pulse w-1/2" />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <MessageList
+                      messages={messages}
+                      user={user}
+                      onSuggestionClick={handleSend}
+                      onRegenerate={handleRegenerate}
+                      onFeedback={handleFeedback}
+                      isLoading={isLoading}
+                    />
+                  )}
+                </div>
               )}
-            </div>
-          )}
 
-          {/* Input Area */}
-          <div className="p-4 md:p-6 bg-gradient-to-t from-[#131314] via-[#131314] to-transparent">
-            <ChatInput
-              onSend={handleSend}
-              isLoading={isLoading}
-              onStop={handleStop}
-            />
-          </div>
+              {/* Input Area */}
+              <div className="p-4 md:p-6 bg-gradient-to-t from-[#131314] via-[#131314] to-transparent">
+                <ChatInput
+                  onSend={handleSend}
+                  isLoading={isLoading}
+                  onStop={handleStop}
+                />
+              </div>
+            </>
+          )}
         </div>
       </main>
 
