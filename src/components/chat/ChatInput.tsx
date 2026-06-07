@@ -64,7 +64,7 @@ export default function ChatInput({ onSend, isLoading, onStop }: ChatInputProps)
     <div className="max-w-4xl mx-auto relative px-2 md:px-4">
       <form
         onSubmit={handleSubmit}
-        className="relative bg-[#1e1f20] border border-[#444746] rounded-2xl md:rounded-3xl overflow-hidden  transition-all shadow-2xl"
+        className="relative bg-[#1e1f20] border border-[#444746] rounded-2xl md:rounded-3xl transition-all shadow-2xl"
       >
         <textarea
           ref={textareaRef}
@@ -84,29 +84,41 @@ export default function ChatInput({ onSend, isLoading, onStop }: ChatInputProps)
           <button
             type="button"
             onClick={toggleListening}
-            className={`p-2.5 rounded-full transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'text-[#c4c7c5] hover:bg-white/10'
+            className={`group relative p-2.5 rounded-full transition-all ${isListening ? 'bg-red-500 text-white animate-pulse' : 'text-[#c4c7c5] hover:bg-white/10'
               }`}
             title="Voice input"
           >
             <Mic size={20} />
+            {/* Tooltip */}
+            <div className="absolute bottom-full right-0 mb-1 hidden group-hover:block px-3 py-1 bg-[#e3e3e3] text-black text-xs font-medium rounded shadow-lg whitespace-nowrap z-50">
+              {isListening ? 'Stop' : 'Voice input'}
+            </div>
           </button>
           
           {isLoading ? (
             <button
               type="button"
               onClick={onStop}
-              className="p-2.5 bg-white text-black rounded-full hover:bg-[#e3e3e3] transition-all shadow-lg"
-              title="Stop generation"
+              className="group relative p-2.5 bg-white text-black rounded-full hover:bg-[#e3e3e3] transition-all shadow-lg"
             >
               <Square size={20} fill="currentColor" />
+              {/* Tooltip */}
+              <div className="absolute bottom-full right-0 mb-1 hidden group-hover:block px-3 py-1 bg-[#e3e3e3] text-black text-xs font-medium rounded shadow-lg whitespace-nowrap z-50">
+                Stop
+              </div>
             </button>
           ) : (
             <button
               type="submit"
               disabled={!input.trim()}
-              className="p-2.5 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all disabled:opacity-40 disabled:hover:bg-blue-600 shadow-lg"
+              className="group relative p-2.5 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-all disabled:opacity-40 disabled:hover:bg-blue-600 shadow-lg"
             >
               <SendHorizontal size={20} />
+              
+              {/* Tooltip */}
+              <div className="absolute bottom-full right-0 mb-1 hidden group-hover:block px-3 py-1 bg-[#e3e3e3] text-black text-xs font-medium rounded shadow-lg whitespace-nowrap z-50">
+                Submit
+              </div>
             </button>
           )}
         </div>

@@ -101,13 +101,17 @@ export default function Sidebar({
                     >
                       <button
                         onClick={() => onSelectChat(chat._id)}
-                        className={`flex w-full items-center gap-3 rounded-full px-3 py-2.5 text-sm transition-colors text-left ${
+                        className={`group relative flex w-full items-center gap-3 rounded-full px-3 py-2.5 text-sm transition-colors text-left ${
                           activeChatId === chat._id
                             ? "bg-[#282a2c] text-white font-medium"
                             : "text-[#e3e3e3] hover:bg-white/10"
                         }`}
                       >
                         <span className="truncate pr-8">{chat.title}</span>
+                        {/* Tooltip for full title */}
+                        <div className="absolute left-0 bottom-full mb-1 hidden group-hover:block px-3 py-1 bg-[#e3e3e3] text-black text-xs font-medium rounded shadow-lg whitespace-nowrap z-50">
+                          {chat.title}
+                        </div>
                       </button>
                       <button
                         onClick={(e) => {
